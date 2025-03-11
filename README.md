@@ -2,7 +2,7 @@
 
 A simple, lightweight AMD GPU monitoring tool for ComfyUI that displays real-time information about your AMD GPU directly in the UI.
 
-![AMD GPU Monitor Screenshot](https://github.com/yourusername/ComfyUI-AMDGPUMonitor/raw/main/screenshot.png)
+![AMD GPU Monitor Screenshot](https://github.com/iDAPPA/ComfyUI-AMDGPUMonitor/raw/main/screenshot.png)
 
 ## Features
 
