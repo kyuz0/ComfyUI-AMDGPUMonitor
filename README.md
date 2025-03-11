@@ -21,7 +21,7 @@ A simple, lightweight AMD GPU monitoring tool for ComfyUI that displays real-tim
 
 ```bash
 cd /path/to/ComfyUI/custom_nodes
-git clone https://github.com/yourusername/ComfyUI-AMDGPUMonitor.git
+git clone https://github.com/iDAPPA/ComfyUI-AMDGPUMonitor.git
 ```
 
 2. Restart ComfyUI
