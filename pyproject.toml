@@ -9,6 +9,6 @@ Repository = "https://github.com/iDAPPA/ComfyUI-AMDGPUMonitor"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "idappa"
 DisplayName = "ComfyUI-AMDGPUMonitor"
 Icon = ""
