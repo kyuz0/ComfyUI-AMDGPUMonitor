@@ -13,7 +13,11 @@ gpu_stats = {
     "vram_used": 0,
     "vram_total": 0,
     "vram_used_percent": 0,
+    "gtt_used": 0,                # NEW
+    "gtt_total": 0,               # NEW
+    "gtt_used_percent": 0,        # NEW
     "gpu_temperature": 0,
+    "gpu_name": "",               # NEW
     "last_update": 0
 }
 
@@ -21,6 +25,12 @@ gpu_stats = {
 monitor_thread = None
 thread_control = threading.Event()
 monitor_update_interval = 1  # seconds
+
+def _to_int(val, default=0):
+    try:
+        return int(float(str(val).replace('%', '').strip()))
+    except:
+        return default
 
 def find_rocm_smi():
     """Find the rocm-smi or amd-smi executable"""
@@ -114,6 +124,27 @@ def get_gpu_info(rocm_smi_path):
                 gpu_stats["vram_used_percent"] = int((vram_used / vram_total) * 100)
     except:
         pass
+
+    # Get GTT (unified) memory info
+    try:
+        info = run_rocm_smi_command(rocm_smi_path, '--showmeminfo', 'gtt', '--json')
+        if isinstance(info, dict) and 'card0' in info:
+            card_info = info['card0']  # first GPU
+            # ROCm 5/6 usually report bytes with these keys:
+            total_b = card_info.get('GTT Total Memory (B)')
+            used_b  = card_info.get('GTT Total Used Memory (B)')
+            # Older formats sometimes use 'Total GTT Memory (B)' etc. Try fallbacks:
+            if total_b is None: total_b = card_info.get('Total GTT Memory (B)')
+            if used_b  is None: used_b  = card_info.get('Total GTT Used Memory (B)')
+
+            if total_b is not None and used_b is not None:
+                gtt_total = int(total_b) / (1024 * 1024)
+                gtt_used  = int(used_b)  / (1024 * 1024)
+                gpu_stats["gtt_total"] = int(gtt_total)
+                gpu_stats["gtt_used"] = int(gtt_used)
+                gpu_stats["gtt_used_percent"] = int((gtt_used / gtt_total) * 100) if gtt_total else 0
+    except:
+        pass
     
     # Get temperature
     try:
@@ -134,24 +165,46 @@ def get_gpu_info(rocm_smi_path):
                 gpu_stats["gpu_temperature"] = int(float(temp_str))
     except:
         pass
+
+    # Get GPU name (product name)
+    try:
+        info = run_rocm_smi_command(rocm_smi_path, '--showproductname', '--json')
+        if isinstance(info, dict) and 'card0' in info:
+            ci = info['card0']
+            # Prefer a human-ish name if present; else show gfx arch or PCI id
+            name = None
+            for k in ('Product', 'GPU name', 'Card model', 'Card Model', 'Card series', 'Card Series'):
+                if ci.get(k) and str(ci[k]).strip() not in ('N/A', ''):
+                    name = str(ci[k]).strip()
+                    break
+            # If still nothing, try GFX version (e.g., gfx1151)
+            if not name and ci.get('GFX Version'):
+                name = f"{ci['GFX Version']}"
+            # Last resort: show the PCI id if present (e.g., 0x1586)
+            if not name and ci.get('Card Model'):
+                name = f"Device {ci['Card Model']}"
+            gpu_stats["gpu_name"] = name or gpu_stats.get("gpu_name", "")
+    except:
+        pass
     
     gpu_stats["last_update"] = time.time()
     return gpu_stats
-
+    
 def send_monitor_update():
-    """Format and send monitor update data"""
     data = {
         'device_type': 'rocm',
         'gpus': [{
+            'name': gpu_stats.get('gpu_name', ''),                # NEW
             'gpu_utilization': gpu_stats['gpu_utilization'],
             'gpu_temperature': gpu_stats['gpu_temperature'],
             'vram_total': gpu_stats['vram_total'],
             'vram_used': gpu_stats['vram_used'],
-            'vram_used_percent': gpu_stats['vram_used_percent']
+            'vram_used_percent': gpu_stats['vram_used_percent'],
+            'gtt_total': gpu_stats.get('gtt_total', 0),           # NEW
+            'gtt_used': gpu_stats.get('gtt_used', 0),             # NEW
+            'gtt_used_percent': gpu_stats.get('gtt_used_percent', 0)  # NEW
         }]
     }
-    
-    # Send the data
     try:
         PromptServer.instance.send_sync('amd_gpu_monitor', data)
     except:
@@ -233,7 +286,13 @@ class AMDGPUMonitor:
         monitor_update_interval = update_interval
         
         # Return current stats as a string for debugging
-        stats = f"GPU: {gpu_stats['gpu_utilization']}% | VRAM: {gpu_stats['vram_used']}MB/{gpu_stats['vram_total']}MB ({gpu_stats['vram_used_percent']}%) | Temp: {gpu_stats['gpu_temperature']}°C"
+        stats = (
+            f"GPU: {gpu_stats['gpu_utilization']}% | "
+            f"VRAM: {gpu_stats['vram_used']}MB/{gpu_stats['vram_total']}MB ({gpu_stats['vram_used_percent']}%) | "
+            f"GTT: {gpu_stats['gtt_used']}MB/{gpu_stats['gtt_total']}MB ({gpu_stats['gtt_used_percent']}%) | "  # NEW
+            f"Temp: {gpu_stats['gpu_temperature']}°C | "
+            f"Name: {gpu_stats.get('gpu_name','')}"                                                             # NEW
+        )
         return (stats,)
 
 # Register our node when this script is imported
