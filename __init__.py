@@ -64,27 +64,25 @@ def find_rocm_smi():
     return None
 
 def run_rocm_smi_command(rocm_smi_path, *args):
-    """Run a rocm-smi command and return the parsed JSON output"""
     if not rocm_smi_path:
         return {}
-        
     cmd = [rocm_smi_path] + list(args)
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-        if result.returncode != 0:
-            return {}
-        
-        # Check if output is JSON
+        # Try to parse JSON whenever requested, even if return code != 0,
+        # because some ROCm builds print warnings but still give valid JSON.
         if '--json' in args:
             try:
                 return json.loads(result.stdout)
             except json.JSONDecodeError:
                 return {}
-        else:
+        # Non-JSON: only return stdout if the call succeeded
+        if result.returncode == 0:
             return result.stdout
+        return {}
     except subprocess.TimeoutExpired:
         return {}
-    except Exception as e:
+    except Exception:
         return {}
 
 def get_gpu_info(rocm_smi_path):
