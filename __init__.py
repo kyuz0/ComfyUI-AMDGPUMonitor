@@ -69,9 +69,10 @@ def run_rocm_smi_command(rocm_smi_path, *args):
     cmd = [rocm_smi_path] + list(args)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        # JSON-first: some builds return warnings + valid JSON
         if '--json' in args:
             try:
-                return json.loads(r.stdout or "{}")   # parse even if return code != 0
+                return json.loads(r.stdout or "{}")
             except json.JSONDecodeError:
                 return {}
         if r.returncode == 0:
@@ -139,20 +140,13 @@ def get_gpu_info(rocm_smi_path):
     except:
         pass
 
-    # GTT (unified) memory
+    # GTT (unified) memory — exact keys from your machine
     try:
         info = run_rocm_smi_command(rocm_smi_path, '--showmeminfo', 'gtt', '--json')
         if isinstance(info, dict) and 'card0' in info:
             ci = info['card0']
-
-            # Your sample keys:
             total_b = ci.get('GTT Total Memory (B)')
             used_b  = ci.get('GTT Total Used Memory (B)')
-
-            # Fallbacks for other ROCm versions:
-            if total_b is None: total_b = ci.get('Total GTT Memory (B)')
-            if used_b  is None: used_b  = ci.get('Total GTT Used Memory (B)') or ci.get('GTT Used Memory (B)')
-
             if total_b and used_b:
                 gtt_total_mb = int(str(total_b)) // (1024 * 1024)
                 gtt_used_mb  = int(str(used_b))  // (1024 * 1024)
@@ -160,32 +154,25 @@ def get_gpu_info(rocm_smi_path):
                 gpu_stats["gtt_used"] = gtt_used_mb
                 gpu_stats["gtt_used_percent"] = int((gtt_used_mb / gtt_total_mb) * 100) if gtt_total_mb else 0
             else:
-                # TEMP DEBUG (remove later)
-                print("GTT keys missing. Got keys:", list(ci.keys()))
+                print("GTT keys missing; got:", list(ci.keys()))
     except Exception as e:
-        # TEMP DEBUG (remove later)
         print("GTT parse error:", e)
 
-
-    # Get GPU name (product name)
+        # GPU name from product info
     try:
         info = run_rocm_smi_command(rocm_smi_path, '--showproductname', '--json')
         if isinstance(info, dict) and 'card0' in info:
             ci = info['card0']
-            # Prefer a human-ish name if present; else show gfx arch or PCI id
             name = None
-            for k in ('Product', 'GPU name', 'Card model', 'Card Model', 'Card series', 'Card Series'):
-                if ci.get(k) and str(ci[k]).strip() not in ('N/A', ''):
-                    name = str(ci[k]).strip()
-                    break
-            # If still nothing, try GFX version (e.g., gfx1151)
-            if not name and ci.get('GFX Version'):
-                name = f"{ci['GFX Version']}"
-            # Last resort: show the PCI id if present (e.g., 0x1586)
-            if not name and ci.get('Card Model'):
+            # Your output includes Card Series and GFX Version
+            if ci.get('Card Series') and str(ci['Card Series']).strip() not in ('N/A', ''):
+                name = str(ci['Card Series']).strip()
+            elif ci.get('GFX Version'):
+                name = str(ci['GFX Version']).strip()
+            elif ci.get('Card Model'):
                 name = f"Device {ci['Card Model']}"
             gpu_stats["gpu_name"] = name or gpu_stats.get("gpu_name", "")
-    except:
+    except Exception:
         pass
     
     gpu_stats["last_update"] = time.time()
@@ -201,16 +188,15 @@ def send_monitor_update():
             'vram_total': gpu_stats['vram_total'],
             'vram_used': gpu_stats['vram_used'],
             'vram_used_percent': gpu_stats['vram_used_percent'],
-            'gtt_total': gpu_stats.get('gtt_total', 0),             # <- must be here
-            'gtt_used': gpu_stats.get('gtt_used', 0),               # <- must be here
-            'gtt_used_percent': gpu_stats.get('gtt_used_percent', 0) # <- must be here
+            'gtt_total': gpu_stats.get('gtt_total', 0),
+            'gtt_used': gpu_stats.get('gtt_used', 0),
+            'gtt_used_percent': gpu_stats.get('gtt_used_percent', 0),
         }]
     }
     try:
         PromptServer.instance.send_sync('amd_gpu_monitor', data)
     except:
         pass
-
 
 def monitor_thread_function():
     """Thread function to continuously monitor GPU stats"""
