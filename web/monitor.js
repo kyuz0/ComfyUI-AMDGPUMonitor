@@ -350,7 +350,14 @@ const createMonitorElement = () => {
     // Initial visibility check
     updateShowButtonVisibility();
 
-    return { container, gpuBar, gpuText, vramBar, vramText, tempBar, tempText };
+    return {
+        container,
+        gpuBar, gpuText,
+        vramBar, vramText,
+        tempBar, tempText,
+        gttBar, gttText,   // ← MUST be included
+        nameRow
+    };
 };
 
 // Update the monitor UI with new data
