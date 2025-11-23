@@ -35,6 +35,7 @@ def _to_int(val, default=0):
 def find_rocm_smi():
     """Find the rocm-smi or amd-smi executable"""
     rocm_paths = [
+        "/opt/venv/bin/rocm-smi",
         "/opt/rocm/bin/rocm-smi",
         "/usr/bin/rocm-smi",
         "/usr/local/bin/rocm-smi",
